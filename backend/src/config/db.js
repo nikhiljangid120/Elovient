@@ -1,34 +1,72 @@
 const mongoose = require('mongoose');
+const path = require('path');
+const fs = require('fs');
 const logger = require('./logger');
+
+let globalMemoryServer = null;
+
+const ensureDefaultUser = async () => {
+  try {
+    const User = require('../models/User');
+    const existing = await User.findOne({ email: 'nikhil@test.com' });
+    if (!existing) {
+      await User.create({
+        name: 'Nikhil Developer',
+        email: 'nikhil@test.com',
+        password: 'Password123!',
+      });
+      logger.info('Auto-seeded default user: nikhil@test.com (Password: Password123!)');
+    }
+  } catch (err) {
+    // Ignore duplicate or seed error
+  }
+};
 
 const connectDB = async () => {
   const mongoURI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/bugtracker';
-  
+
   try {
-    // Attempt connecting to local or configured MongoDB instance with a short timeout
     const conn = await mongoose.connect(mongoURI, {
-      serverSelectionTimeoutMS: 2500,
+      serverSelectionTimeoutMS: 2000,
     });
     logger.info(`MongoDB Connected: ${conn.connection.host}`);
+    await ensureDefaultUser();
     return conn;
   } catch (error) {
     logger.warn(`Connecting to external MongoDB (${mongoURI}) failed: ${error.message}`);
 
-    // Seamless automatic fallback for local development:
-    // If local mongod is not running, boot embedded In-Memory MongoDB automatically!
+    // Automatic persistent local database fallback
     if (process.env.NODE_ENV !== 'production') {
-      logger.info('Starting Embedded In-Memory MongoDB Server so you can run the app without installing MongoDB...');
+      logger.info('Starting Embedded In-Memory MongoDB Server with persistent storage...');
       try {
         const { MongoMemoryServer } = require('mongodb-memory-server');
-        const memoryServer = await MongoMemoryServer.create();
-        const memoryUri = memoryServer.getUri();
-        
+        const dbDir = path.join(__dirname, '../../.mongo-storage');
+        if (!fs.existsSync(dbDir)) {
+          fs.mkdirSync(dbDir, { recursive: true });
+        }
+
+        if (!globalMemoryServer) {
+          try {
+            globalMemoryServer = await MongoMemoryServer.create({
+              instance: {
+                dbPath: dbDir,
+                storageEngine: 'wiredTiger',
+              },
+            });
+          } catch (lockErr) {
+            // If another instance locked the dir, fallback to ephemeral
+            globalMemoryServer = await MongoMemoryServer.create();
+          }
+        }
+
+        const memoryUri = globalMemoryServer.getUri();
         const conn = await mongoose.connect(memoryUri);
-        logger.info(`Embedded In-Memory MongoDB Connected successfully: ${memoryUri}`);
-        logger.info('Zero-config database active! You can register, login, and manage bugs without installing local MongoDB.');
+        logger.info(`Embedded Database Connected successfully: ${memoryUri}`);
+        logger.info('Zero-config database active! Persistent across server reloads.');
+        await ensureDefaultUser();
         return conn;
       } catch (memError) {
-        logger.error(`Failed to launch In-Memory MongoDB: ${memError.message}`);
+        logger.error(`Failed to launch Embedded Database: ${memError.message}`);
       }
     }
 
