@@ -1,0 +1,292 @@
+{
+  "info": {
+    "name": "Bug Tracker Lite API (Elovient Evaluation)",
+    "_postman_id": "a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d",
+    "description": "Comprehensive Postman test collection for Bug Tracker Lite issue tracking platform with JWT Authentication, AWS S3 Pre-signed URLs, and ownership enforcement.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5000/api",
+      "type": "string"
+    },
+    {
+      "key": "authToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "bugId",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Authentication",
+      "item": [
+        {
+          "name": "Sign Up (Register New User)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "if (jsonData.token) {",
+                  "    pm.collectionVariables.set('authToken', jsonData.token);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Nikhil Tester\",\n  \"email\": \"nikhil_demo@example.com\",\n  \"password\": \"Password123!\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/signup",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "signup"]
+            }
+          }
+        },
+        {
+          "name": "Login (Retrieve JWT Token)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "if (jsonData.token) {",
+                  "    pm.collectionVariables.set('authToken', jsonData.token);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"nikhil_demo@example.com\",\n  \"password\": \"Password123!\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "login"]
+            }
+          }
+        },
+        {
+          "name": "Get Current User Profile (/me)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/me",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "me"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. AWS S3 Pre-signed Upload URL",
+      "item": [
+        {
+          "name": "Generate Pre-signed S3 Upload URL",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fileName\": \"checkout_crash.png\",\n  \"fileType\": \"image/png\",\n  \"fileSize\": 1048576\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/bugs/upload-url",
+              "host": ["{{baseUrl}}"],
+              "path": ["bugs", "upload-url"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Bug Management",
+      "item": [
+        {
+          "name": "Create Bug",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "if (jsonData.bug && (jsonData.bug._id || jsonData.bug.id)) {",
+                  "    pm.collectionVariables.set('bugId', jsonData.bug._id || jsonData.bug.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Checkout button unresponsive on iOS Safari\",\n  \"description\": \"Steps: 1. Add item to cart 2. Tap Proceed to Checkout 3. Button loader spins indefinitely.\",\n  \"severity\": \"high\",\n  \"status\": \"open\",\n  \"imageKey\": \"bugs/demo/checkout_crash.png\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/bugs",
+              "host": ["{{baseUrl}}"],
+              "path": ["bugs"]
+            }
+          }
+        },
+        {
+          "name": "List User's Bugs (All)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/bugs",
+              "host": ["{{baseUrl}}"],
+              "path": ["bugs"]
+            }
+          }
+        },
+        {
+          "name": "Filter Bugs by Status (?status=open)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/bugs?status=open",
+              "host": ["{{baseUrl}}"],
+              "path": ["bugs"],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "open"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "View Bug by ID (Includes Pre-signed Image GET URL)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/bugs/{{bugId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["bugs", "{{bugId}}"]
+            }
+          }
+        },
+        {
+          "name": "Edit Bug",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"in-progress\",\n  \"description\": \"Identified issue with Safari webkit touch events. Fix currently in progress.\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/bugs/{{bugId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["bugs", "{{bugId}}"]
+            }
+          }
+        },
+        {
+          "name": "Delete Bug & Associated S3 Image",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/bugs/{{bugId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["bugs", "{{bugId}}"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
