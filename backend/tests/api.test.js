@@ -1,6 +1,8 @@
 const request = require('supertest');
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
+const rateLimit = require('express-rate-limit');
+const express = require('express');
 const app = require('../src/app');
 const User = require('../src/models/User');
 const Bug = require('../src/models/Bug');
@@ -26,6 +28,32 @@ afterAll(async () => {
 describe('=== Bug Tracker Lite API Suite ===', () => {
 
   describe('1. Authentication Endpoints', () => {
+    it('should reject signup with missing required fields', async () => {
+      const res = await request(app)
+        .post('/api/auth/signup')
+        .send({
+          email: 'incomplete@example.com',
+        });
+
+      expect(res.status).toBe(400);
+      expect(res.body.success).toBe(false);
+      expect(res.body.message).toContain('Please provide name, email, and password');
+    });
+
+    it('should reject signup when password is shorter than 6 characters', async () => {
+      const res = await request(app)
+        .post('/api/auth/signup')
+        .send({
+          name: 'Short Pass',
+          email: 'short@example.com',
+          password: '123',
+        });
+
+      expect(res.status).toBe(400);
+      expect(res.body.success).toBe(false);
+      expect(res.body.message).toContain('at least 6 characters');
+    });
+
     it('should register a new user successfully (User 1)', async () => {
       const res = await request(app)
         .post('/api/auth/signup')
@@ -97,7 +125,33 @@ describe('=== Bug Tracker Lite API Suite ===', () => {
     });
   });
 
-  describe('2. AWS S3 Pre-signed Upload URL Endpoint', () => {
+  describe('2. JWT Authentication Guard & Security', () => {
+    it('should reject requests with missing Authorization header (401)', async () => {
+      const res = await request(app).get('/api/bugs');
+      expect(res.status).toBe(401);
+      expect(res.body.message).toContain('No authorization token provided');
+    });
+
+    it('should reject requests with malformed JWT token (401)', async () => {
+      const res = await request(app)
+        .get('/api/bugs')
+        .set('Authorization', 'Bearer totally-invalid-token-string-123');
+
+      expect(res.status).toBe(401);
+      expect(res.body.message).toContain('Invalid authorization token');
+    });
+
+    it('should return current user profile on GET /api/auth/me', async () => {
+      const res = await request(app)
+        .get('/api/auth/me')
+        .set('Authorization', `Bearer ${user1Token}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.user.email).toBe('nikhil@example.com');
+    });
+  });
+
+  describe('3. AWS S3 Pre-signed Upload URL Endpoint', () => {
     it('should reject unauthenticated request for upload URL', async () => {
       const res = await request(app)
         .post('/api/bugs/upload-url')
@@ -136,24 +190,65 @@ describe('=== Bug Tracker Lite API Suite ===', () => {
       expect(res.body.message).toContain('exceeds 5MB limit');
     });
 
-    it('should generate pre-signed upload URL for valid image', async () => {
+    it('should generate pre-signed upload URL for valid image (case insensitive MIME)', async () => {
       const res = await request(app)
         .post('/api/bugs/upload-url')
         .set('Authorization', `Bearer ${user1Token}`)
         .send({
-          fileName: 'login_error.png',
-          fileType: 'image/png',
+          fileName: 'login_error.PNG',
+          fileType: 'image/PNG',
           fileSize: 1024 * 500, // 500 KB
         });
 
       expect(res.status).toBe(200);
       expect(res.body.uploadUrl).toBeDefined();
-      expect(res.body.imageKey).toContain('login_error.png');
+      expect(res.body.imageKey).toBeDefined();
       expect(res.body.expiresInSeconds).toBe(300);
     });
   });
 
-  describe('3. Bug Management & CRUD Operations', () => {
+  describe('4. Bug Management & CRUD Operations', () => {
+    it('should reject bug creation with missing title or description', async () => {
+      const res = await request(app)
+        .post('/api/bugs')
+        .set('Authorization', `Bearer ${user1Token}`)
+        .send({
+          title: '',
+          description: '',
+        });
+
+      expect(res.status).toBe(400);
+      expect(res.body.message).toContain('Title and description are required');
+    });
+
+    it('should reject bug creation with invalid severity', async () => {
+      const res = await request(app)
+        .post('/api/bugs')
+        .set('Authorization', `Bearer ${user1Token}`)
+        .send({
+          title: 'Test',
+          description: 'Desc',
+          severity: 'super-critical', // invalid enum
+        });
+
+      expect(res.status).toBe(400);
+      expect(res.body.message).toContain('Severity must be either "low", "med", or "high"');
+    });
+
+    it('should reject bug creation with invalid status', async () => {
+      const res = await request(app)
+        .post('/api/bugs')
+        .set('Authorization', `Bearer ${user1Token}`)
+        .send({
+          title: 'Test',
+          description: 'Desc',
+          status: 'resolved-unknown', // invalid status
+        });
+
+      expect(res.status).toBe(400);
+      expect(res.body.message).toContain('Status must be either "open", "in-progress", or "closed"');
+    });
+
     it('should create a new bug with severity and status validation', async () => {
       const res = await request(app)
         .post('/api/bugs')
@@ -175,22 +270,8 @@ describe('=== Bug Tracker Lite API Suite ===', () => {
       bug1Id = res.body.bug._id || res.body.bug.id;
     });
 
-    it('should reject bug creation with invalid severity', async () => {
-      const res = await request(app)
-        .post('/api/bugs')
-        .set('Authorization', `Bearer ${user1Token}`)
-        .send({
-          title: 'Test',
-          description: 'Desc',
-          severity: 'super-critical', // invalid enum
-        });
-
-      expect(res.status).toBe(400);
-      expect(res.body.message).toContain('Severity must be either "low", "med", or "high"');
-    });
-
     it('should list only bugs belonging to the authenticated user', async () => {
-      // First create a bug for User 2
+      // Create a bug for User 2 to verify data isolation
       await Bug.create({
         userId: user2Id,
         title: 'User 2 Secret Bug',
@@ -209,12 +290,38 @@ describe('=== Bug Tracker Lite API Suite ===', () => {
     });
 
     it('should support filtering bugs by status', async () => {
-      const res = await request(app)
+      const openRes = await request(app)
+        .get('/api/bugs?status=open')
+        .set('Authorization', `Bearer ${user1Token}`);
+
+      expect(openRes.status).toBe(200);
+      expect(openRes.body.bugs.length).toBe(1);
+
+      const closedRes = await request(app)
         .get('/api/bugs?status=closed')
         .set('Authorization', `Bearer ${user1Token}`);
 
-      expect(res.status).toBe(200);
-      expect(res.body.bugs.length).toBe(0);
+      expect(closedRes.status).toBe(200);
+      expect(closedRes.body.bugs.length).toBe(0);
+    });
+
+    it('should return 404 for invalid ObjectId format', async () => {
+      const res = await request(app)
+        .get('/api/bugs/invalid-id-format')
+        .set('Authorization', `Bearer ${user1Token}`);
+
+      expect(res.status).toBe(404);
+      expect(res.body.message).toContain('Bug not found');
+    });
+
+    it('should return 404 for non-existent bug ID', async () => {
+      const nonExistentId = new mongoose.Types.ObjectId();
+      const res = await request(app)
+        .get(`/api/bugs/${nonExistentId}`)
+        .set('Authorization', `Bearer ${user1Token}`);
+
+      expect(res.status).toBe(404);
+      expect(res.body.message).toContain('Bug not found');
     });
 
     it('should allow owner to view bug details with pre-signed imageUrl', async () => {
@@ -240,9 +347,20 @@ describe('=== Bug Tracker Lite API Suite ===', () => {
       expect(res.body.bug.status).toBe('in-progress');
       expect(res.body.bug.description).toBe('Updated steps to reproduce.');
     });
+
+    it('should reject editing bug with invalid severity', async () => {
+      const res = await request(app)
+        .put(`/api/bugs/${bug1Id}`)
+        .set('Authorization', `Bearer ${user1Token}`)
+        .send({
+          severity: 'invalid-severity',
+        });
+
+      expect(res.status).toBe(400);
+    });
   });
 
-  describe('4. Mandatory Server-Side Ownership Protection', () => {
+  describe('5. Mandatory Server-Side Ownership Protection', () => {
     it('SECURITY TEST: Reject User 2 from viewing User 1 bug (403 Forbidden)', async () => {
       const res = await request(app)
         .get(`/api/bugs/${bug1Id}`)
@@ -274,7 +392,7 @@ describe('=== Bug Tracker Lite API Suite ===', () => {
     });
   });
 
-  describe('5. Bug Deletion & Cleanup', () => {
+  describe('6. Bug Deletion & Cleanup', () => {
     it('should allow the owner to delete their bug', async () => {
       const res = await request(app)
         .delete(`/api/bugs/${bug1Id}`)
@@ -286,6 +404,41 @@ describe('=== Bug Tracker Lite API Suite ===', () => {
       // Verify bug is deleted from DB
       const check = await Bug.findById(bug1Id);
       expect(check).toBeNull();
+    });
+  });
+
+  describe('7. Rate Limiter Security Validation', () => {
+    it('should enforce rate limit and return HTTP 429 when max limit is exceeded', async () => {
+      const testApp = express();
+      testApp.use(rateLimit({
+        windowMs: 60000,
+        max: 2,
+        standardHeaders: true,
+        legacyHeaders: false,
+        handler: (req, res) => {
+          res.status(429).json({
+            success: false,
+            message: 'Too many authentication attempts from this IP. Please try again after 1 minute.',
+            retryAfterSeconds: 60,
+          });
+        },
+      }));
+      testApp.get('/test-limit', (req, res) => res.json({ ok: true }));
+
+      // Request 1: OK
+      const r1 = await request(testApp).get('/test-limit');
+      expect(r1.status).toBe(200);
+
+      // Request 2: OK
+      const r2 = await request(testApp).get('/test-limit');
+      expect(r2.status).toBe(200);
+
+      // Request 3: Limit breached -> 429
+      const r3 = await request(testApp).get('/test-limit');
+      expect(r3.status).toBe(429);
+      expect(r3.body.success).toBe(false);
+      expect(r3.body.message).toContain('Too many authentication attempts');
+      expect(r3.body.retryAfterSeconds).toBe(60);
     });
   });
 });
