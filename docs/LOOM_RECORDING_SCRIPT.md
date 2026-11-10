@@ -86,3 +86,4 @@
   > *"Finally, for Task 2, I prepared discovery meeting notes and an end-to-end technical proposal for an automotive production monitoring platform featuring Industrial Edge gateways, TimescaleDB, and real-time OEE dashboards.*
   > *For Task 3, I designed a cloud-native ERP architecture for a paint manufacturer replacing Excel and unifying Tally accounting, complete with an interactive vector diagram.*
   > *Thank you for your time and consideration. All instructions, tests, and documentation are available in the repository. I look forward to speaking with you soon!"*
+

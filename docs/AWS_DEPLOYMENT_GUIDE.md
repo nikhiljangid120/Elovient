@@ -147,3 +147,4 @@ aws s3 sync dist/ s3://bug-tracker-frontend-static --delete
 - [x] IAM credentials limited strictly to `PutObject`, `GetObject`, `DeleteObject`.
 - [x] Express backend rate limits auth requests to 5 attempts/min.
 - [x] Database queries enforce user ownership validation on every request.
+
