@@ -4,16 +4,15 @@
  */
 require('dotenv').config();
 const mongoose = require('mongoose');
+const connectDB = require('../src/config/db');
 const User = require('../src/models/User');
 const Bug = require('../src/models/Bug');
 const logger = require('../src/config/logger');
 
-const mongoURI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/bugtracker';
-
 async function seedDatabase() {
   try {
-    await mongoose.connect(mongoURI);
-    logger.info(`Connected to MongoDB for seeding: ${mongoURI}`);
+    await connectDB();
+    logger.info(`Database connected for seeding.`);
 
     // Optional: Clean existing data
     await User.deleteMany({ email: { $in: ['nikhil@company.com', 'evaluator@elovient.com'] } });
