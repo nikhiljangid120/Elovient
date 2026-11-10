@@ -92,6 +92,14 @@ const deleteS3Object = async (key) => {
   }
 
   logger.info(`[Dev/Mock] Simulating deletion of S3 object: ${key}`);
+  const fs = require('fs');
+  const path = require('path');
+  const safeName = encodeURIComponent(key).replace(/%/g, '_');
+  const filePath = path.join(__dirname, '../../.data/mock-s3', safeName);
+  if (fs.existsSync(filePath)) {
+    try { fs.unlinkSync(filePath); } catch (e) {}
+    try { fs.unlinkSync(`${filePath}.meta.json`); } catch (e) {}
+  }
   return true;
 };
 
